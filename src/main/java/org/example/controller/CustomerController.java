@@ -14,12 +14,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/v1/customers")
-//@CrossOrigin(origins = "http://localhost:9090") // The URL of frontend
 public class CustomerController {
 
+    private static final Logger logger = LoggerFactory.getLogger(CustomerController.class);
     private final JwtService jwtService;
     private final CustomerService customerService;
     private final HttpServletResponse httpServletResponse;
@@ -43,7 +45,7 @@ public class CustomerController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> loginCustomer(@RequestBody CustomerLoginDto loginCustomerDto) {
+    public ResponseEntity<?> loginCustomer(@RequestBody CustomerLoginDto loginCustomerDto, HttpServletResponse response) {
         try {
             Customer loginCustomer = customerService.authenticateCustomer(loginCustomerDto);
             String jwtToken = jwtService.generateToken(loginCustomer);
@@ -84,11 +86,27 @@ public class CustomerController {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
+                logger.info("Cookie Name: {}, Cookie Value: {}", cookie.getName(), cookie.getValue());
                 if ("jwtToken".equals(cookie.getName()) && jwtService.validateToken(cookie.getValue())) {
+                    logger.info("Session is valid for jwtToken: {}", cookie.getValue());
                     return ResponseEntity.ok().body("Session is valid.");
                 }
             }
         }
+        logger.info("Session is not valid or no jwtToken cookie found.");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Session is not valid.");
+    }
+
+    @PostMapping("/validate-token")
+    public ResponseEntity<?> validateToken(@RequestBody String token) {
+        logger.info("Received token for validation: {}", token);  // Log the token
+        try {
+            boolean isValid = jwtService.validateToken(token);
+            logger.info("Token validation result: {}", isValid);  // Log the validation result
+            return ResponseEntity.ok(isValid);
+        } catch (Exception e) {
+            logger.error("Token validation error: {}", e.getMessage());  // Log the exception message
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+        }
     }
 }
