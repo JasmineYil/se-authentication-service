@@ -6,13 +6,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.example.dto.CustomerDto;
 import org.example.dto.CustomerLoginDto;
 import org.example.dto.LoginResponseDto;
-import org.example.exception.EmailAlreadyInUseException;
 import org.example.model.Customer;
 import org.example.service.CustomerService;
 import org.example.service.JwtService;
+import org.example.util.CookieUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,79 +33,80 @@ public class CustomerController {
 
     @PostMapping("/register")
     public ResponseEntity<?> registerCustomer(@RequestBody CustomerDto customerDto) {
-        try {
-            customerService.registerCustomer(customerDto);
-            return ResponseEntity.status(HttpStatus.CREATED).body("Customer registered successfully");
-        } catch (EmailAlreadyInUseException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("The information provided cannot be used to create a new account. Please double-check your details or try different ones.");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Customer registration failed");
-        }
+        customerService.registerCustomer(customerDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body("Customer registered successfully");
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> loginCustomer(@RequestBody CustomerLoginDto loginCustomerDto, HttpServletResponse response) {
-        try {
-            Customer loginCustomer = customerService.authenticateCustomer(loginCustomerDto);
-            String jwtToken = jwtService.generateToken(loginCustomer);
+        Customer loginCustomer = customerService.authenticateCustomer(loginCustomerDto);
+        String jwtToken = jwtService.generateToken(loginCustomer);
 
-            LoginResponseDto loginResponseDto = new LoginResponseDto();
-            loginResponseDto.setJwtToken(jwtToken);
-            loginResponseDto.setJwtExpirationInMilliseconds(jwtService.getExpirationTime());
+        LoginResponseDto loginResponseDto = new LoginResponseDto();
+        loginResponseDto.setJwtToken(jwtToken);
+        loginResponseDto.setJwtExpirationInMilliseconds(jwtService.getExpirationTime());
 
-            Cookie cookie = new Cookie("jwtToken", jwtToken);
-            cookie.setHttpOnly(true);
-            cookie.setSecure(true);
-            cookie.setPath("/");
-            cookie.setMaxAge((int) jwtService.getExpirationTime());
-            httpServletResponse.addCookie(cookie);
+        CookieUtils.setJwtCookie(httpServletResponse, jwtToken, (int) jwtService.getExpirationTime());
 
-            return ResponseEntity.status(HttpStatus.OK).body(loginResponseDto);
-        } catch (BadCredentialsException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("Invalid credentials");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Customer login failed");
-        }
+        return ResponseEntity.status(HttpStatus.OK).body(loginResponseDto);
     }
 
     @PostMapping("/logout")
     public ResponseEntity<?> logoutCustomer(HttpServletResponse response) {
-        Cookie cookie = new Cookie("jwtToken", null);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
-
+        CookieUtils.clearJwtCookie(response);
         return ResponseEntity.ok().body("Customer logged out successfully");
     }
 
     @GetMapping("/check-session")
     public ResponseEntity<?> checkCustomerSession(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                logger.info("Cookie Name: {}, Cookie Value: {}", cookie.getName(), cookie.getValue());
-                if ("jwtToken".equals(cookie.getName()) && jwtService.validateToken(cookie.getValue())) {
-                    logger.info("Session is valid for jwtToken: {}", cookie.getValue());
-                    return ResponseEntity.ok().body("Session is valid.");
-                }
-            }
+        Cookie jwtCookie = CookieUtils.findJwtCookie(cookies);
+
+        if (jwtCookie != null && jwtService.validateToken(jwtCookie.getValue())) {
+            logger.info("Session is valid for jwtToken: {}", jwtCookie.getValue());
+            return ResponseEntity.ok().body("Session is valid.");
         }
-        logger.info("Session is not valid or no jwtToken cookie found.");
+
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Session is not valid.");
     }
 
     @PostMapping("/validate-token")
     public ResponseEntity<?> validateToken(@RequestBody String token) {
-        logger.info("Received token for validation: {}", token);  // Log the token
+        logger.info("Received token for validation: {}", token);
         try {
             boolean isValid = jwtService.validateToken(token);
-            logger.info("Token validation result: {}", isValid);  // Log the validation result
+            logger.info("Token validation result: {}", isValid);
             return ResponseEntity.ok(isValid);
         } catch (Exception e) {
-            logger.error("Token validation error: {}", e.getMessage());  // Log the exception message
+            logger.error("Token validation error: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
         }
+    }
+
+    @DeleteMapping("/delete")
+    public ResponseEntity<String> deleteCustomer(HttpServletRequest request, HttpServletResponse response) {
+        Cookie[] cookies =  request.getCookies();
+        Cookie jwtCookie = CookieUtils.findJwtCookie(cookies);
+
+        if (jwtCookie != null && jwtService.validateToken(jwtCookie.getValue())) {
+            customerService.deleteCustomer(jwtCookie.getValue());
+            CookieUtils.clearJwtCookie(response);
+            return ResponseEntity.ok().body("Customer deleted successfully");
+        }
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+
+    }
+
+    @GetMapping("/profile")
+    public ResponseEntity<CustomerDto> getProfile(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        Cookie jwtCookie = CookieUtils.findJwtCookie(cookies);
+
+        if (jwtCookie != null && jwtService.validateToken(jwtCookie.getValue())) {
+            CustomerDto customer = customerService.getCustomerInfo(jwtService.extractUsername(jwtCookie.getValue()));
+            return ResponseEntity.ok(customer);
+        }
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
     }
 }
