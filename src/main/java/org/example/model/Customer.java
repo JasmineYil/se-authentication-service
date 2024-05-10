@@ -1,6 +1,5 @@
 package org.example.model;
 
-//import jakarta.persistence.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
@@ -9,26 +8,17 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.List;
 
-//@Entity
 @Document(collection = "customers")
 public class Customer implements UserDetails {
 
     @Id
-    //@GeneratedValue(strategy = GenerationType.IDENTITY)
-    //@Column(name = "customer_id")
     private String id;
 
-    //@Column(name = "customer_firstname", nullable = false, columnDefinition = "CHAR")
     private String firstName;
-    //@Column(name = "customer_lastname", nullable = false, columnDefinition = "CHAR")
     private String lastName;
-    //@Column(name = "customer_telephone_number", nullable = false)
     private String phoneNumber;
-    //@Column(name = "licence_number")
     private int licenceNumber;
-    //@Column(name = "e-mail", nullable = false)
     private String email;
-    //@Column(name = "password", nullable = false)
     private String password;
 
     public Customer() {}
